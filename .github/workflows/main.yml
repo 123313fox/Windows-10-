@@ -1,0 +1,50 @@
+name: Windows Server 2022 Workflow
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Install PowerShell
+      uses: microsoft/powershell-installer-action@v1
+
+    - name: Install psrp module
+      run: Install-Module -Name psrp -Force
+
+    - name: Generate random username and password
+      id: generate_creds
+      run: |
+        $username = "${{ secrets.GITHUB_ACTOR }}-$(Invoke-Expression -Command 'New-Guid | % {$_.Guid.Split('-')[0]}')"
+        $password = ConvertTo-SecureString -String (Invoke-Expression -Command 'New-Guid | % {"$([char[]]$_)"}' -Force) -AsPlainText -Force
+        ConvertFrom-SecureString -SecureString $password -Force | Set-Content $(System.env.HOME)\.github\creds.txt
+        $creds = Get-Content $(System.env.HOME)\.github\creds.txt
+        echo ::set-output name=USERNAME::$creds.Username
+        echo ::set-output name=PASSWORD::$creds.Password
+
+    - name: Connect to Windows Server 2022
+      env:
+        USERNAME: ${{ steps.generate_creds.outputs.USERNAME }}
+        PASSWORD: ${{ steps.generate_creds.outputs.PASSWORD }}
+      run: |
+        $credential = New-Object System.Management.Automation.PSCredential($env:USERNAME, (ConvertTo-SecureString $env:PASSWORD -AsPlainText -Force))
+        $session = New-PSSession -ComputerName your-server-name -Credential $credential -Authentication Negotiate -UseSSL
+        Enter-PSSession $session
+        # Perform tasks on Windows Server 2022
+        # ...
+        Exit-PSSession
+        Remove-PSSession $session
+
+    - name: Display IP, username, and password
+      run: |
+        $ip = (Test-Connection -ComputerName your-server-name -Quiet -Count 1).IPV4Address.IPAddressToString
+        echo "IP: $ip"
+        echo "Username: $env:USERNAME"
+        echo "Password: $env:PASSWORD"
